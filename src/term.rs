@@ -1,9 +1,7 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
-use unicode_segmentation::UnicodeSegmentation;
-use crate::ansi_escaper;
-use crate::ansi_escaper::{AnsiEscaper, AnsiType, CSIType, OSCType, ToAnsi};
+use crate::ansi_escaper::{AnsiEscaper, AnsiType, CSIType, OSCType};
 
 extern crate unicode_segmentation;
 
@@ -140,7 +138,8 @@ impl Term {
         }
     }
 
-    pub fn write<S: AsRef<str>>(&mut self, s: S) {
+    // TODO: what does this do?
+    pub fn write<S: AsRef<str>>(&mut self, _s: S) {
         loop {
             let ansi = self.escaper.parse_next();
             match ansi {AnsiType::Text(str) => self.ti.write(str),

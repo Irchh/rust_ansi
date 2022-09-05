@@ -1,10 +1,9 @@
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::vec;
 use core::fmt::{Display, Error, Formatter};
 use core::ops::Range;
-use std::println;
-use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -352,7 +351,7 @@ impl AnsiEscaper {
     }
 
     pub fn new_text<S: AsRef<str>>(&mut self, str: S) {
-        let mut new_graphemes = str.as_ref().graphemes(false).collect::<Vec<&str>>();
+        let new_graphemes = str.as_ref().graphemes(false).collect::<Vec<&str>>();
         for gr in new_graphemes {
             self.graphemes.push(String::from(gr));
         }
@@ -407,10 +406,6 @@ impl AnsiEscaper {
             AnsiType::Unknown(_) => {}
         }
 
-        while let Some(gr) = self.graphemes.first() {
-
-        }
-
         AnsiType::Incomplete
     }
 }
@@ -425,27 +420,6 @@ impl ToAnsi for &str {
         escaper.new_text(self);
         escaper
     }
-}
-
-/// Escapes a given string, and returns the first found ANSI code, how far into the string it was found, and how many characters it occupies, in a tuple.
-pub fn new_escape<S: AsRef<str>>(s: S) -> (AnsiType, i32, i32) {
-    let graphemes = s.as_ref().graphemes(false).collect::<Vec<&str>>();
-    let mut traversed = 0;
-    let mut start = 0;
-    let mut parsing = false;
-
-    for grapheme in graphemes {
-        if grapheme == "\x1B" {
-            start = traversed;
-        } else if parsing {
-
-        } else {
-
-        }
-        traversed += grapheme.len();
-    }
-
-    todo!()
 }
 
 pub fn read_until_escape_char<S: AsRef<str>>(s: S) -> String {
