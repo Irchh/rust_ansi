@@ -1,0 +1,12 @@
+[package]
+name = "rust_ansi"
+version = "0.0.1"
+edition = "2021"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies.unicode-segmentation]
+version = "1.9.0"
+features = ["no_std"]
