@@ -109,6 +109,8 @@ pub trait TermInterface {
     fn decstbm(&self, top: usize, bot: usize);
     /// Set left and right margins. Moves the cursor to column 1, line 1 of the page.
     fn decslrm(&self, left: usize, right: usize);
+    /// Shows or hides cursor based on the `show` argument.
+    fn dectcem(&self, show: bool);
     /// Should return a tuple of the current row and column as (row, column).
     fn device_status_report(&self) -> (usize, usize);
     /// Unknown csi code.
@@ -166,6 +168,7 @@ impl Term {
                         CSIType::SGR(n, m) => self.ti.select_graphics_rendition(n, m),
                         CSIType::DECSTBM(top, bot) => self.ti.decstbm(top, bot),
                         CSIType::DECSLRM(top, bot) => self.ti.decslrm(top, bot),
+                        CSIType::DECTCEM(show) => self.ti.dectcem(show),
                         CSIType::Unknown(s) => self.ti.unknown_csi(s),
                     }
                 }

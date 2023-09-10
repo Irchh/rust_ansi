@@ -170,6 +170,7 @@ impl Display for AnsiType {
                     CSIType::SGR(n, m) => {f.write_str(format!("SGR {{ n: {}, m: {:?}", n, m).as_str())}
                     CSIType::DECSTBM(n, m) => {f.write_str(format!("DECSTBM {{ n: {}, m: {:?}", n, m).as_str())}
                     CSIType::DECSLRM(n, m) => {f.write_str(format!("DECSLRM {{ n: {}, m: {:?}", n, m).as_str())}
+                    CSIType::DECTCEM(h) => {f.write_str(format!("DECTCEM {{ h: {:?}", h).as_str())}
                     CSIType::Unknown(s) => {f.write_str(format!("CSI {{ Unknown: {:?}", s).as_str())}
                 };
                 f.write_str(" }")
@@ -225,6 +226,7 @@ pub enum CSIType {
 
     SGR(usize, Vec<usize>),
 
+    DECTCEM(bool),
     DECSTBM(usize, usize),
     DECSLRM(usize, usize),
 
@@ -325,6 +327,13 @@ impl CSIType {
             }
         } else {
             match n {
+                25 => {
+                    match gr {
+                        "h" => { CSIType::DECTCEM(true) }
+                        "l" => { CSIType::DECTCEM(false) }
+                        _ => { CSIType::Unknown(format!("Unknown Private CSI command: {}{}", n, gr))}
+                    }
+                }
                 _ => { CSIType::Unknown(format!("Unknown Private CSI command: {}", n)) }
             }
         }
