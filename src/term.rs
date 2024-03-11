@@ -1,3 +1,4 @@
+// TODO: Extract this into a new crate
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -5,70 +6,74 @@ use crate::ansi_escaper::{AnsiEscaper, AnsiType, CSIType, OSCType};
 
 extern crate unicode_segmentation;
 
-pub trait TermInterface {
+pub trait TermInterface<T> {
+    /// Returns a reference to the imaginary framebuffer of the terminal.
+    // TODO: Is this good enough? Is there a need for a mutable reference?
+    fn framebuffer(&self) -> &T;
+
     /// Write plain text to screen. `s` should not contain any ANSI codes.
-    fn write(&self, s: String);
+    fn write(&mut self, s: String);
     /// Moves cursor absolute X position. Top left of the screen is 1,1.
-    fn goto_x(&self, x: usize);
+    fn goto_x(&mut self, x: usize);
     /// Moves cursor absolute Y position. Top left of the screen is 1,1.
-    fn goto_y(&self, y: usize);
+    fn goto_y(&mut self, y: usize);
     /// Moves cursor relative X position. Top left of the screen is 1,1.
-    fn move_x(&self, x: isize);
+    fn move_x(&mut self, x: isize);
     /// Moves cursor relative Y position. Top left of the screen is 1,1.
-    fn move_y(&self, y: isize);
+    fn move_y(&mut self, y: isize);
     /// Gets called whenever I feel like it. Not neccesary
-    fn draw(&self) {
+    fn draw(&mut self) {
         // Only needed if the implementer wants to buffer changes until necessary.
     }
 
     /// Moves cursor absolute X/Y position. Top left of the screen is 1,1.
-    fn goto(&self, x: usize, y: usize) {
+    fn goto(&mut self, x: usize, y: usize) {
         self.goto_x(x);
         self.goto_y(y);
     }
     /// Moves cursor relative X/Y position. Top left of the screen is 1,1.
-    fn goto_rel(&self, x: isize, y: isize) {
+    fn goto_rel(&mut self, x: isize, y: isize) {
         self.move_x(x);
         self.move_y(y);
     }
 
     // CSI
     /// Moves the cursor up *n* (default `1`) cells. If the cursor is already at the edge of the screen, this has no effect.
-    fn cursor_up(&self, n: usize) {
+    fn cursor_up(&mut self, n: usize) {
         self.goto_rel(0, -(n as isize));
     }
     /// Moves the cursor down *n* (default `1`) cells. If the cursor is already at the edge of the screen, this has no effect.
-    fn cursor_down(&self, n: usize) {
+    fn cursor_down(&mut self, n: usize) {
         self.goto_rel(0, n as isize);
     }
     /// Moves the cursor forward *n* (default `1`) cells. If the cursor is already at the edge of the screen, this has no effect.
-    fn cursor_forward(&self, n: usize) {
+    fn cursor_forward(&mut self, n: usize) {
         self.goto_rel(n as isize, 0);
     }
     /// Moves the cursor back *n* (default `1`) cells. If the cursor is already at the edge of the screen, this has no effect.
-    fn cursor_back(&self, n: usize) {
+    fn cursor_back(&mut self, n: usize) {
         self.goto_rel(-(n as isize), 0);
     }
     /// Moves the cursor to the beginning of the line *n* (default `1`) lines down.
-    fn cursor_next_line(&self, n: usize) {
+    fn cursor_next_line(&mut self, n: usize) {
         self.goto_x(1);
         self.move_y(n as isize);
     }
     /// Moves the cursor to the beginning of the line *n* (default `1`) lines up.
-    fn cursor_prev_line(&self, n: usize) {
+    fn cursor_prev_line(&mut self, n: usize) {
         self.goto_x(1);
         self.move_y(-(n as isize));
     }
     /// Moves the cursor to column *n* (default `1`).
-    fn cursor_horizontal_absolute(&self, n: usize) {
+    fn cursor_horizontal_absolute(&mut self, n: usize) {
         self.goto_y(n);
     }
     /// Moves the cursor to row *n* (default `1`).
-    fn cursor_vertical_absolute(&self, n: usize) {
+    fn cursor_vertical_absolute(&mut self, n: usize) {
         self.goto_x(n);
     }
     /// Moves the cursor to row *n*, column *m* (default `1`/`1`).
-    fn cursor_position(&self, n: usize, m: usize) {
+    fn cursor_position(&mut self, n: usize, m: usize) {
         self.goto(n, m);
     }
     /// Clears part of the screen.
@@ -81,7 +86,7 @@ pub trait TermInterface {
     /// - 3 - Clear entire screen, including scrollback buffer (if it is implemented)
     ///
     /// Note: Cursor position does not change.
-    fn erase_in_display(&self, n: usize);
+    fn erase_in_display(&mut self, n: usize);
     /// Clears part of the line.
     ///
     /// different `n`-values:
@@ -91,53 +96,58 @@ pub trait TermInterface {
     /// - 2 - Clear entire line
     ///
     /// Note: Cursor position does not change.
-    fn erase_in_line(&self, n: usize);
+    fn erase_in_line(&mut self, n: usize);
     /// Scroll up page by `n` lines.
-    fn scroll_up(&self, n: usize);
+    fn scroll_up(&mut self, n: usize);
     /// Scroll down page by `n` lines.
-    fn scroll_down(&self, n: usize);
+    fn scroll_down(&mut self, n: usize);
     /// Moves the current line by `n` lines, clearing the current line in the process.
     // TODO: Rename function to more be intuitive.
-    fn il(&self, n: usize);
+    fn il(&mut self, n: usize);
     /// Moves the cursor to row *n*, column *m* (default `1`/`1`).
-    fn horizontal_vertical_position(&self, n: usize, m: usize) {
+    fn horizontal_vertical_position(&mut self, n: usize, m: usize) {
         self.goto(n, m);
     }
     /// Sets colors and style of the characters following.
-    fn select_graphics_rendition(&self, n: usize, m: Vec<usize>);
+    fn select_graphics_rendition(&mut self, n: usize, m: Vec<usize>);
     /// Set top and bottom margins. Moves the cursor to column 1, line 1 of the page.
-    fn decstbm(&self, top: usize, bot: usize);
+    fn decstbm(&mut self, top: usize, bot: usize);
     /// Set left and right margins. Moves the cursor to column 1, line 1 of the page.
-    fn decslrm(&self, left: usize, right: usize);
+    fn decslrm(&mut self, left: usize, right: usize);
     /// Shows or hides cursor based on the `show` argument.
-    fn dectcem(&self, show: bool);
+    fn dectcem(&mut self, show: bool);
     /// Should return a tuple of the current row and column as (row, column).
-    fn device_status_report(&self) -> (usize, usize);
+    fn device_status_report(&mut self) -> (usize, usize);
     /// Unknown csi code.
-    fn unknown_csi(&self, s: String);
+    fn unknown_csi(&mut self, s: String);
 
     // OSI
     /// Sets the title of the terminal window.
-    fn set_title(&self, title: String);
+    fn set_title(&mut self, title: String);
     /// Unknown osc code.
-    fn unknown_osc(&self, s: String);
+    fn unknown_osc(&mut self, s: String);
 
     // Other
     /// Unknown ANSI code.
-    fn unknown(&self, s: String);
+    fn unknown(&mut self, s: String);
 }
 
-pub struct Term {
-    ti: Box<dyn TermInterface>,
+pub struct Term<T> {
+    ti: Box<dyn TermInterface<T>>,
     escaper: AnsiEscaper,
 }
 
-impl Term {
-    pub const fn new(ti: Box<dyn TermInterface>) -> Self {
+impl<T> Term<T> {
+    pub const fn new(ti: Box<dyn TermInterface<T>>) -> Self {
         Self {
             ti,
             escaper: AnsiEscaper::new()
         }
+    }
+
+    /// Returns a reference to the imaginary framebuffer of the terminal.
+    pub fn framebuffer(&self) -> &T {
+        self.ti.framebuffer()
     }
 
     // TODO: what does this do?

@@ -499,8 +499,8 @@ pub fn escape<S: AsRef<str>>(s: S) -> (AnsiType, usize) {
 
         if grapheme == "\x1b" || escaping {
             escaping = true;
-            ansi_string += grapheme.clone();
-            let res = crate::ansi_escaper::escape(ansi_string.clone());
+            ansi_string += grapheme;
+            let res = escape(ansi_string.clone());
             if res.1 > 0 {
                 match res.0 {
                     AnsiType::ST => {
