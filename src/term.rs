@@ -10,6 +10,9 @@ pub trait TermInterface<T> {
     /// Returns a reference to the imaginary framebuffer of the terminal.
     // TODO: Is this good enough? Is there a need for a mutable reference?
     fn framebuffer(&self) -> &T;
+    /// Called when renderer has rendered so you can check for dirty bits.
+    // TODO: Remove and force rendering side to buffer the framebuffer maybe?
+    fn completed_render(&mut self);
 
     /// Write plain text to screen. `s` should not contain any ANSI codes.
     fn write(&mut self, s: String);
@@ -109,7 +112,7 @@ pub trait TermInterface<T> {
         self.goto(n, m);
     }
     /// Sets colors and style of the characters following.
-    fn select_graphics_rendition(&mut self, n: usize, m: Vec<usize>);
+    fn select_graphics_rendition(&mut self, n: Vec<usize>);
     /// Set top and bottom margins. Moves the cursor to column 1, line 1 of the page.
     fn decstbm(&mut self, top: usize, bot: usize);
     /// Set left and right margins. Moves the cursor to column 1, line 1 of the page.
@@ -150,8 +153,13 @@ impl<T> Term<T> {
         self.ti.framebuffer()
     }
 
+    pub fn completed_render(&mut self) {
+        self.ti.completed_render();
+    }
+
     // TODO: what does this do?
-    pub fn write<S: AsRef<str>>(&mut self, _s: S) {
+    pub fn write<S: AsRef<str>>(&mut self, s: S) {
+        self.escaper.new_text(s);
         loop {
             let ansi = self.escaper.parse_next();
             match ansi {AnsiType::Text(str) => self.ti.write(str),
@@ -175,7 +183,7 @@ impl<T> Term<T> {
                         CSIType::SD(n) => self.ti.scroll_down(n),
                         CSIType::IL(n) => self.ti.il(n),
                         CSIType::HVP(n, m) => self.ti.horizontal_vertical_position(n, m),
-                        CSIType::SGR(n, m) => self.ti.select_graphics_rendition(n, m),
+                        CSIType::SGR(n) => self.ti.select_graphics_rendition(n),
                         CSIType::DECSTBM(top, bot) => self.ti.decstbm(top, bot),
                         CSIType::DECSLRM(top, bot) => self.ti.decslrm(top, bot),
                         CSIType::DECTCEM(show) => self.ti.dectcem(show),

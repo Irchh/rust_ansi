@@ -167,7 +167,7 @@ impl Display for AnsiType {
                     CSIType::SD(n) => {f.write_str(format!("SD {{ n: {}", n).as_str())}
                     CSIType::IL(n) => {f.write_str(format!("IL {{ n: {}", n).as_str())}
                     CSIType::HVP(n, m) => {f.write_str(format!("HVP {{ n: {}, m: {}", n, m).as_str())}
-                    CSIType::SGR(n, m) => {f.write_str(format!("SGR {{ n: {}, m: {:?}", n, m).as_str())}
+                    CSIType::SGR(n) => {f.write_str(format!("SGR {{ n: {:?}", n).as_str())}
                     CSIType::DECSTBM(n, m) => {f.write_str(format!("DECSTBM {{ n: {}, m: {:?}", n, m).as_str())}
                     CSIType::DECSLRM(n, m) => {f.write_str(format!("DECSLRM {{ n: {}, m: {:?}", n, m).as_str())}
                     CSIType::DECTCEM(h) => {f.write_str(format!("DECTCEM {{ h: {:?}", h).as_str())}
@@ -224,7 +224,7 @@ pub enum CSIType {
 
     HVP(usize,usize),
 
-    SGR(usize, Vec<usize>),
+    SGR(Vec<usize>),
 
     DECTCEM(bool),
     DECSTBM(usize, usize),
@@ -269,7 +269,7 @@ impl CSIType {
             args[0].remove(0);
             private = true;
         }
-
+        // TODO: Totally rewrite this lol
         let first_arg_result = args[0].as_str().parse::<usize>();
         let n;
         let mut default = false;
@@ -310,16 +310,20 @@ impl CSIType {
                 "T" => { CSIType::SD(n) }
                 "f" => { CSIType::CUP(n, m) }
                 "m" => {
-                    let mut sgr_args = Vec::<usize>::new();
-                    for i in 1..args.len() {
-                        let res = args[i].as_str().parse::<usize>();
-                        if res.is_ok() {
-                            sgr_args.push(res.unwrap());
-                        } else {
-                            sgr_args.push(0);
+                    if default {
+                        CSIType::SGR(vec![0])
+                    } else {
+                        let mut sgr_args = Vec::<usize>::new();
+                        for i in 0..args.len() {
+                            let res = args[i].as_str().parse::<usize>();
+                            if res.is_ok() {
+                                sgr_args.push(res.unwrap());
+                            } else {
+                                sgr_args.push(0);
+                            }
                         }
+                        CSIType::SGR(sgr_args)
                     }
-                    CSIType::SGR(if default {0} else {n}, sgr_args)
                 }
                 "r" => { CSIType::DECSTBM(n, m) }
                 "s" => { CSIType::DECSLRM(n, m) }
@@ -371,17 +375,21 @@ impl AnsiEscaper {
         let mut string = String::new();
         while let Some(gr) = self.graphemes.first() {
             if gr == "\x1B" {
-                if string.is_empty() {
-                    return self.parse();
+                return if string.is_empty() {
+                    self.parse()
                 } else {
-                    return AnsiType::Text(string);
+                    AnsiType::Text(string)
                 }
             }
             string += gr;
             self.graphemes.remove(0);
         }
 
-        AnsiType::Incomplete
+        if string.is_empty() {
+            AnsiType::Incomplete
+        } else {
+            AnsiType::Text(string)
+        }
     }
 
     fn next_grapheme(&mut self) -> Option<String> {
@@ -404,7 +412,73 @@ impl AnsiEscaper {
             AnsiType::SS2 => {}
             AnsiType::SS3 => {}
             AnsiType::DCS => {}
-            AnsiType::CSI { .. } => {}
+            AnsiType::CSI { .. } => {
+                // parameter bytes
+                let parameter_bytes = {
+                    let mut v = vec![];
+                    while let Some(g) = self.graphemes.first() {
+                        if g.is_ascii() {
+                            let chars = g.chars().collect::<Vec<char>>();
+                            if chars.len() == 1 {
+                                if (0x30..=0x3F).contains(&(*chars.get(0).unwrap() as u32)) {
+                                    v.push(chars.get(0).unwrap().clone());
+                                    self.graphemes.remove(0);
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    v
+                };
+                let mut parameters = vec![];
+                let mut tmp_param = String::new();
+                for bytes in parameter_bytes {
+                    if bytes != ';' {
+                        tmp_param.push(bytes.clone());
+                        continue;
+                    }
+                    if tmp_param.len() == 0 {
+                        parameters.push(String::from("0"));
+                    } else {
+                        parameters.push(tmp_param.clone());
+                        tmp_param.clear();
+                    }
+                }
+                if tmp_param.len() != 0 {
+                    parameters.push(tmp_param.clone());
+                    tmp_param.clear();
+                }
+                // intermediate bytes
+                let _ = {
+                    let mut v = vec![];
+                    while let Some(g) = self.graphemes.first() {
+                        if g.is_ascii() {
+                            let chars = g.chars().collect::<Vec<char>>();
+                            if chars.len() == 1 {
+                                if (0x20..=0x2F).contains(&(*chars.get(0).unwrap() as u32)) {
+                                    v.push(chars.get(0).unwrap().clone());
+                                    self.graphemes.remove(0);
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    v
+                };
+                // final byte
+                let final_gr = self.graphemes.remove(0);
+                return AnsiType::finish(&final_gr, ansi_type, parameters);
+            }
             AnsiType::ST => {}
             AnsiType::OSC { .. } => {}
             AnsiType::RIS => {}
