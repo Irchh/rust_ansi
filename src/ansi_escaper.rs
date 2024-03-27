@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use alloc::vec;
 use core::fmt::{Display, Error, Formatter};
 use core::ops::Range;
+use std::println;
 use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,6 +34,10 @@ pub enum AnsiType {
     PM,
     /// Application Program Command
     APC,
+
+    /// Used to set character sets on the original VT100, can mostly be ignored now
+    // TODO: Can it be ignored? Works fine on all apps I’ve tried, but some people probably want this code to work
+    SETCHARSET,
 
     /// Ansi sequence is not complete / has errors
     Incomplete,
@@ -65,12 +70,14 @@ impl From<&str> for AnsiType {
             "O" =>  { AnsiType::SS3 }
             "P" =>  { AnsiType::DCS }
             "[" =>  { AnsiType::CSI { kind: CSIType::Unknown(String::new()) } }
-            "\\" => { AnsiType::ST }
             "]" =>  { AnsiType::OSC { kind: OSCType::Unknown(String::new()) } }
+            "\\" => { AnsiType::ST }
             "X" =>  { AnsiType::SOS }
             "*" =>  { AnsiType::PM }
             "_" =>  { AnsiType::APC }
             "c" =>  { AnsiType::RIS }
+            ")" =>  { AnsiType::SETCHARSET }
+            "(" =>  { AnsiType::SETCHARSET }
             _ => { AnsiType::Unknown(String::from(format!("Unknown ansi escape char: {}", gr))) }
         }
     }
@@ -79,43 +86,48 @@ impl From<&str> for AnsiType {
 impl AnsiType {
     pub fn finish(gr: &str, t: AnsiType, args: Vec<String>) -> AnsiType {
         match t {
-            AnsiType::SS2 => {AnsiType::ST}
-            AnsiType::SS3 => {AnsiType::ST}
-            AnsiType::DCS => {AnsiType::ST}
+            AnsiType::SS2 => {AnsiType::SS2}
+            AnsiType::SS3 => {AnsiType::SS3}
+            AnsiType::DCS => {AnsiType::DCS}
             AnsiType::CSI { .. } => {
                 let csi = AnsiType::CSI { kind: CSIType::from(gr, args) };
                 csi
             }
             AnsiType::ST => {AnsiType::ST}
-            AnsiType::OSC { .. } => {AnsiType::OSC {kind: OSCType::from(gr, args)}}
-            AnsiType::RIS => {AnsiType::ST}
-            AnsiType::SOS => {AnsiType::ST}
-            AnsiType::PM => {AnsiType::ST}
-            AnsiType::APC => {AnsiType::ST}
-            AnsiType::Incomplete => {AnsiType::ST}
+            AnsiType::OSC { .. } => {
+                //println!("OSC: {:?}", OSCType::from(gr, args.clone()));
+                AnsiType::OSC {kind: OSCType::from(gr, args)}
+            }
+            AnsiType::RIS => {AnsiType::RIS}
+            AnsiType::SOS => {AnsiType::SOS}
+            AnsiType::PM => {AnsiType::PM}
+            AnsiType::APC => {AnsiType::APC}
+            AnsiType::Incomplete => {AnsiType::Incomplete}
             AnsiType::Unknown(s) => {AnsiType::Unknown(s)}
             AnsiType::Text(s) => {AnsiType::Text(s)}
+            AnsiType::SETCHARSET => t,
         }
     }
 
     pub fn finish_grapheme(gr: &str, t: AnsiType, args: Vec<String>) -> AnsiType {
         match t {
-            AnsiType::SS2 => {AnsiType::ST}
-            AnsiType::SS3 => {AnsiType::ST}
-            AnsiType::DCS => {AnsiType::ST}
+            AnsiType::SS2 => {AnsiType::SS2}
+            AnsiType::SS3 => {AnsiType::SS3}
+            AnsiType::DCS => {AnsiType::DCS}
             AnsiType::CSI { .. } => {
                 let csi = AnsiType::CSI { kind: CSIType::from_grapheme(gr, args) };
                 csi
             }
             AnsiType::ST => {AnsiType::ST}
             AnsiType::OSC { .. } => {AnsiType::OSC {kind: OSCType::from_grapheme(gr, args)}}
-            AnsiType::RIS => {AnsiType::ST}
-            AnsiType::SOS => {AnsiType::ST}
-            AnsiType::PM => {AnsiType::ST}
-            AnsiType::APC => {AnsiType::ST}
-            AnsiType::Incomplete => {AnsiType::ST}
+            AnsiType::RIS => {AnsiType::RIS}
+            AnsiType::SOS => {AnsiType::SOS}
+            AnsiType::PM => {AnsiType::PM}
+            AnsiType::APC => {AnsiType::APC}
+            AnsiType::Incomplete => {AnsiType::Incomplete}
             AnsiType::Unknown(s) => {AnsiType::Unknown(s)}
             AnsiType::Text(s) => {AnsiType::Text(s)}
+            AnsiType::SETCHARSET => t,
         }
     }
 
@@ -134,6 +146,7 @@ impl AnsiType {
             AnsiType::PM => {1..0}
             AnsiType::APC => {1..0}
             AnsiType::Incomplete => {1..0}
+            AnsiType::SETCHARSET => {1..0}
             AnsiType::Unknown(_) => {1..0}
         }, end_char_range)
     }
@@ -142,7 +155,7 @@ impl AnsiType {
 impl Display for AnsiType {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         let _ = match self {
-            AnsiType::Text(s) => f.write_str(format!("Text({})", s).as_str()),
+            AnsiType::Text(s) => f.write_str(format!("Text({:?})", s).as_str()),
             AnsiType::SS2 => {f.write_str("SS2")}
             AnsiType::SS3 => {f.write_str("SS3")}
             AnsiType::DCS => {f.write_str("DCS")}
@@ -190,6 +203,7 @@ impl Display for AnsiType {
             AnsiType::APC => {f.write_str("APC")}
             AnsiType::Unknown(s) => {f.write_str(format!("Unknown: {:?}", s).as_str())}
             AnsiType::Incomplete => {f.write_str("Incomplete")}
+            AnsiType::SETCHARSET => f.write_str("TODO"),
         };
         Ok(())
     }
@@ -265,12 +279,18 @@ impl CSIType {
     pub fn from(gr: &str, _args: Vec<String>) -> CSIType {
         let mut args = _args.clone();
         let mut private = false;
-        if args[0].starts_with("?") {
+        if args.len() != 0 && args[0].starts_with("?") {
             args[0].remove(0);
             private = true;
         }
         // TODO: Totally rewrite this lol
-        let first_arg_result = args[0].as_str().parse::<usize>();
+        let first_arg_result = {
+            if args.len() == 0 {
+                "not a number".parse::<usize>()
+            } else {
+                args[0].as_str().parse::<usize>()
+            }
+        };
         let n;
         let mut default = false;
         if first_arg_result.is_ok() {
@@ -419,13 +439,9 @@ impl AnsiEscaper {
                     while let Some(g) = self.graphemes.first() {
                         if g.is_ascii() {
                             let chars = g.chars().collect::<Vec<char>>();
-                            if chars.len() == 1 {
-                                if (0x30..=0x3F).contains(&(*chars.get(0).unwrap() as u32)) {
-                                    v.push(chars.get(0).unwrap().clone());
-                                    self.graphemes.remove(0);
-                                } else {
-                                    break;
-                                }
+                            if (0x30..=0x3F).contains(&(*chars.get(0).unwrap() as u32)) {
+                                v.push(chars.get(0).unwrap().clone());
+                                self.graphemes.remove(0);
                             } else {
                                 break;
                             }
@@ -480,11 +496,69 @@ impl AnsiEscaper {
                 return AnsiType::finish(&final_gr, ansi_type, parameters);
             }
             AnsiType::ST => {}
-            AnsiType::OSC { .. } => {}
+            AnsiType::OSC { .. } => {
+                if let Some(gr) = self.graphemes.first() {
+                    let osc_raw = {
+                        let mut v = vec![];
+                        while let Some(g) = self.graphemes.first() {
+                            if g.is_ascii() {
+                                let chars = g.chars().collect::<Vec<char>>();
+                                if [0x07, 0x9C].contains(&(*chars.get(0).unwrap() as u32)) {
+                                    self.graphemes.remove(0);
+                                    break;
+                                } else if *chars.get(0).unwrap() == 0x1B as char {
+                                    if self.graphemes.get(1).is_some() && *self.graphemes.get(1).unwrap().chars().collect::<Vec<char>>().get(0).unwrap() == 0x5C as char {
+                                        self.graphemes.remove(0);
+                                        self.graphemes.remove(0);
+                                        break;
+                                    }
+                                } else {
+                                    v.push(chars.get(0).unwrap().clone());
+                                    self.graphemes.remove(0);
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        v
+                    };
+                    let mut parameters = vec![];
+                    let mut tmp_param = String::new();
+                    for bytes in osc_raw {
+                        if bytes != ';' {
+                            tmp_param.push(bytes.clone());
+                            continue;
+                        }
+                        if tmp_param.len() == 0 {
+                            parameters.push(String::from("0"));
+                        } else {
+                            parameters.push(tmp_param.clone());
+                            tmp_param.clear();
+                        }
+                    }
+                    if tmp_param.len() != 0 {
+                        parameters.push(tmp_param.clone());
+                        tmp_param.clear();
+                    }
+                    if parameters.len() < 2 {
+                        return AnsiType::Incomplete;
+                    }
+                    match parameters[0].as_str() {
+                        "0" => return AnsiType::OSC { kind: OSCType::WindowTitle(parameters[1].clone()) },
+                        _ => return AnsiType::OSC { kind: OSCType::Unknown(parameters[1].clone()) },
+                    }
+                } else {
+                    return AnsiType::Incomplete;
+                }
+            }
             AnsiType::RIS => {}
             AnsiType::SOS => {}
             AnsiType::PM => {}
             AnsiType::APC => {}
+            AnsiType::SETCHARSET => {
+                let _ = self.next_grapheme().unwrap();
+                return AnsiType::SETCHARSET
+            }
             AnsiType::Incomplete => {}
             AnsiType::Unknown(_) => {}
         }

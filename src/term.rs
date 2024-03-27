@@ -2,6 +2,7 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
+use std::println;
 use crate::ansi_escaper::{AnsiEscaper, AnsiType, CSIType, OSCType};
 
 extern crate unicode_segmentation;
@@ -162,7 +163,11 @@ impl<T> Term<T> {
         self.escaper.new_text(s);
         loop {
             let ansi = self.escaper.parse_next();
-            match ansi {AnsiType::Text(str) => self.ti.write(str),
+            if ansi != AnsiType::Incomplete {
+                println!("ANSI: {}", ansi);
+            }
+            match ansi {
+                AnsiType::Text(str) => self.ti.write(str),
                 AnsiType::SS2 => {}
                 AnsiType::SS3 => {}
                 AnsiType::DCS => {}
@@ -176,7 +181,7 @@ impl<T> Term<T> {
                         CSIType::CPL(n) => self.ti.cursor_prev_line(n),
                         CSIType::CHA(n) => self.ti.cursor_horizontal_absolute(n),
                         CSIType::CVA(n) => self.ti.cursor_vertical_absolute(n),
-                        CSIType::CUP(n, m) => self.ti.cursor_position(n, m),
+                        CSIType::CUP(n, m) => self.ti.cursor_position(m, n),
                         CSIType::ED(n) => self.ti.erase_in_display(n),
                         CSIType::EL(n) => self.ti.erase_in_line(n),
                         CSIType::SU(n) => self.ti.scroll_up(n),
@@ -205,6 +210,7 @@ impl<T> Term<T> {
                     break;
                 }
                 AnsiType::Unknown(str) => self.ti.unknown(str),
+                AnsiType::SETCHARSET => {}
             }
         }
     }
